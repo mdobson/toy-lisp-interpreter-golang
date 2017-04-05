@@ -1,11 +1,8 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 )
 
@@ -20,27 +17,109 @@ type sexpr struct {
 	atoms []atom
 }
 
+type node struct {
+	typing string
+	token  token
+	tree   []*node
+}
+
 const (
-	NUMBER = 1
-	STRING = 2
-	SYMBOL = 3
+	EXPRESSION = "EXPRESSION"
+	CHARACTER  = "CHARACTER"
+	OPERATOR   = "OPERATOR"
+)
+
+const (
+	READY = iota
+	READING
+	STRREAD
+	ESCAPE
+	COMMENT
 )
 
 func main() {
-	const (
-		READY = iota
-		READING
-		STRREAD
-		ESCAPE
-		COMMENT
-	)
+	//programOne := "(defun adder(x y) (+ x y))"
+	tokens := readTokens("+ 1 (+ 1 (+ (+ 1 1) 1) 1)")
 
+	program := &node{
+		tree: []*node{},
+	}
+	var curr *node
+	var prev *node
+	curr = program
+	for _, token := range tokens {
+
+		switch token {
+		case "(":
+			newExpression := &node{
+				typing: EXPRESSION,
+				token:  "",
+				tree:   []*node{},
+			}
+
+			addToTree(curr, newExpression)
+			prev = curr
+			curr = newExpression
+			newNode := &node{
+				typing: CHARACTER,
+				token:  token,
+				tree:   []*node{},
+			}
+			addToTree(curr, newNode)
+		case "+":
+			newNode := &node{
+				typing: OPERATOR,
+				token:  token,
+				tree:   []*node{},
+			}
+			addToTree(curr, newNode)
+		case ")":
+			newNode := &node{
+				typing: CHARACTER,
+				token:  token,
+				tree:   []*node{},
+			}
+			addToTree(curr, newNode)
+			curr = prev
+		default:
+			newNode := &node{
+				typing: CHARACTER,
+				token:  token,
+				tree:   []*node{},
+			}
+			addToTree(curr, newNode)
+		}
+	}
+
+	crawl(program, 0)
+}
+
+func crawl(tree *node, level int) {
+	var limiter string
+	if level > 0 {
+		for index := 0; index < level; index++ {
+			limiter += ">"
+		}
+	}
+	level++
+
+	for _, child := range tree.tree {
+		fmt.Printf("%s Token <%s>: %s\n", limiter, child.typing, child.token)
+
+		if len(child.tree) > 0 {
+			crawl(child, level)
+		}
+	}
+}
+
+func readTokens(script string) []token {
 	var tmp bytes.Buffer
 	var tokens []token
 
-	f, _ := os.Open("script.ls")
+	//f, _ := os.Open("script.ls")
+	//r := bufio.NewReader(f)
 
-	r := bufio.NewReader(f)
+	r := strings.NewReader(script)
 	rn, _, err := r.ReadRune()
 	if err != nil {
 		fmt.Printf("Error %s", err.Error())
@@ -90,88 +169,10 @@ func main() {
 		rn, _, err = r.ReadRune()
 	}
 
-	var expression sexpr
-	for _, tok := range tokens {
-		if tok == "(" {
-			expression = sexpr{
-				atoms: []atom{},
-			}
-		} else if tok == ")" {
-			result := eval(expression)
-			fmt.Printf("Script Result: %s\n", result.token)
-		} else if strings.Count(string(tok), "\"") == 2 {
-			singleAtom := atom{
-				token:  tok,
-				typing: STRING,
-			}
-			expression.atoms = append(expression.atoms, singleAtom)
-		} else if string(tok) == "+" {
-			singleAtom := atom{
-				token:  tok,
-				typing: SYMBOL,
-			}
-			expression.atoms = append(expression.atoms, singleAtom)
-		} else {
-			singleAtom := atom{
-				token:  tok,
-				typing: NUMBER,
-			}
-			expression.atoms = append(expression.atoms, singleAtom)
-		}
-	}
+	return tokens
 }
 
-func eval(expression sexpr) atom {
-	isConcat := false
-	isAddition := false
-	for _, a := range expression.atoms {
-		if a.typing == STRING {
-			isConcat = true
-		} else if a.typing == NUMBER {
-			isAddition = true
-		}
-	}
-
-	if !isAddition && isConcat {
-		result := concat(expression)
-		return atom{
-			token:  token(result),
-			typing: STRING,
-		}
-	} else if isAddition && !isConcat {
-		result := add(expression)
-		return atom{
-			token:  token(strconv.Itoa(result)),
-			typing: STRING,
-		}
-	}
-	return atom{
-		token:  "0",
-		typing: STRING,
-	}
-}
-
-func concat(expression sexpr) string {
-	values := []string{}
-	for _, atom := range expression.atoms {
-		if atom.token != "+" {
-			unpackedValue := strings.Replace(string(atom.token), "\"", "", 2)
-			values = append(values, unpackedValue)
-		}
-	}
-	return fmt.Sprintf("\"%s\"", strings.Join(values, ""))
-}
-
-func add(expression sexpr) int {
-	r := 0
-	for _, atom := range expression.atoms {
-		if atom.token != "+" {
-			n, err := strconv.Atoi(string(atom.token))
-			if err != nil {
-				panic(err)
-			}
-			r += n
-		}
-	}
-	return r
+func addToTree(t *node, n *node) {
+	//fmt.Printf("ADD TOKEN:%s TO TREE.\n", n.token)
+	t.tree = append(t.tree, n)
 }
